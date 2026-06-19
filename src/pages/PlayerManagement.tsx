@@ -29,8 +29,7 @@ const allThemes: ScriptTheme[] = [
 const allDifficulties: ScriptDifficulty[] = ['新手', '进阶', '硬核', '骨灰']
 
 const PlayerManagement: React.FC = () => {
-  const { players, addGameSession: _addGame, ...rest } = useAppStore()
-  const { gameSessions: _gs, scripts: _s, ...store } = rest as any
+  const { players, addPlayer } = useAppStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [form] = Form.useForm()
 
@@ -46,8 +45,8 @@ const PlayerManagement: React.FC = () => {
         registeredAt: new Date().toISOString().slice(0, 10),
         totalGames: 0
       }
-      ;(store as any).players.push(newPlayer)
-      message.success(`玩家 "${newPlayer.name}" 已添加（演示环境）`)
+      addPlayer(newPlayer)
+      message.success(`玩家 "${newPlayer.name}" 已添加`)
       setIsModalOpen(false)
       form.resetFields()
     })

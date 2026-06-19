@@ -15,6 +15,7 @@ import {
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined, DeleteOutlined, UserAddOutlined } from '@ant-design/icons'
+import { useNavigate } from 'react-router-dom'
 import dayjs, { Dayjs } from 'dayjs'
 import { useAppStore } from '../store/useAppStore'
 import type { GameSession } from '../types'
@@ -24,6 +25,7 @@ const { RangePicker } = DatePicker
 const { TextArea } = Input
 
 const GameList: React.FC = () => {
+  const navigate = useNavigate()
   const { gameSessions, scripts, players, addGameSession, removeGameSession, setSelectedGameId } = useAppStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [form] = Form.useForm()
@@ -136,7 +138,7 @@ const GameList: React.FC = () => {
             icon={<UserAddOutlined />}
             onClick={() => {
               setSelectedGameId(record.id)
-              window.location.hash = '#/matching'
+              navigate('/matching')
             }}
           >
             撮合玩家

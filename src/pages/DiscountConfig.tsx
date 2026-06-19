@@ -219,9 +219,13 @@ const DiscountConfig: React.FC = () => {
 
         <Col xs={24} lg={12}>
           <Card
-            title="优惠计算器"
+            title={
+              <Space>
+                <CalculatorOutlined style={{ color: '#722ed1' }} />
+                优惠计算器
+              </Space>
+            }
             bordered={false}
-            icon={<CalculatorOutlined />}
           >
             <Form layout="vertical">
               <Form.Item label="原始金额 (元)">

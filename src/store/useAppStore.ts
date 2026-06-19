@@ -34,6 +34,7 @@ interface AppState {
   selectedGameId: string | null
 
   setSelectedGameId: (id: string | null) => void
+  addPlayer: (player: Player) => void
   addGameSession: (game: GameSession) => void
   updateGameSession: (game: GameSession) => void
   removeGameSession: (id: string) => void
@@ -66,6 +67,9 @@ export const useAppStore = create<AppState>((set) => ({
   selectedGameId: null,
 
   setSelectedGameId: (id) => set({ selectedGameId: id }),
+
+  addPlayer: (player) =>
+    set((state) => ({ players: [...state.players, player] })),
 
   addGameSession: (game) =>
     set((state) => ({ gameSessions: [...state.gameSessions, game] })),

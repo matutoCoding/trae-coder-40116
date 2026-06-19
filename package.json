@@ -5,10 +5,11 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && electron-builder",
-    "build:web": "tsc && vite build",
-    "preview": "vite preview",
-    "electron:dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron ."
+    "dev:web": "vite --host",
+    "build": "vite build && electron-builder",
+    "build:web": "vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
   },
   "dependencies": {
     "react": "^18.2.0",
