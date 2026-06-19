@@ -4,9 +4,9 @@
   "description": "剧本杀组局桌面客户端",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "vite",
-    "dev:web": "vite --host",
-    "build": "vite build && electron-builder",
+    "dev": "node scripts/dev-electron.js",
+    "dev:web": "vite",
+    "build": "node scripts/dev-electron.js build",
     "build:web": "vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"
@@ -44,5 +44,8 @@
       "dist",
       "dist-electron"
     ]
+  },
+  "electronDownload": {
+    "mirror": "https://npmmirror.com/mirrors/electron/"
   }
 }

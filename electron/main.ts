@@ -7,6 +7,7 @@ function createWindow() {
     height: 800,
     minWidth: 1024,
     minHeight: 680,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js')
     }
@@ -18,6 +19,10 @@ function createWindow() {
   } else {
     win.loadFile(path.join(__dirname, '../dist/index.html'))
   }
+
+  win.once('ready-to-show', () => {
+    win.show()
+  })
 }
 
 app.whenReady().then(() => {
