@@ -20,7 +20,15 @@ export type WillingnessStatus = '待确认' | '已同意' | '已拒绝'
 
 export type DiscountType = 'coupon' | 'full_reduction'
 
-export type PaymentStatus = '待支付' | '已支付' | '已退款'
+export type PaymentStatus = '待支付' | '部分支付' | '已支付' | '已退款'
+
+export interface PaymentRecord {
+  id: string
+  amount: number
+  type: '定金' | '尾款' | '全款' | '其他'
+  note?: string
+  paidAt: string
+}
 
 export interface Player {
   id: string
@@ -119,6 +127,8 @@ export interface Bill {
   discountDetails: DiscountDetail[]
   finalAmount: number
   paymentStatus: PaymentStatus
+  paymentRecords: PaymentRecord[]
+  paidAmount: number
   paidAt?: string
   createdAt: string
 }

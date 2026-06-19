@@ -17,14 +17,15 @@ import {
   message,
   Typography,
   Popconfirm,
-  Tooltip,
   Empty,
-  Statistic
+  Statistic,
+  Steps,
+  InputNumber,
+  Input as AntInput
 } from 'antd'
 import {
   ArrowLeftOutlined,
   UserOutlined,
-  StarOutlined,
   CheckCircleOutlined,
   ScheduleOutlined,
   FileTextOutlined,
@@ -32,19 +33,31 @@ import {
   PrinterOutlined,
   HeartOutlined,
   TeamOutlined,
-  MoneyCollectOutlined
+  MoneyCollectOutlined,
+  PlayCircleOutlined,
+  StopOutlined,
+  PlusOutlined
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import { useAppStore } from '../store/useAppStore'
-import type { Bill, DiscountCoupon } from '../types'
+import type { Bill, PaymentRecord, GameStatus } from '../types'
 import {
   assignDMToGame,
   unassignDMFromGame,
   recommendDMForGame
 } from '../modules/dmSchedule'
-import { generateBill, markBillPaid, markBillRefunded, formatBillText, calculateGameTotalRevenue } from '../modules/billing'
+import {
+  generateBill,
+  markBillPaid,
+  markBillRefunded,
+  addPayment,
+  formatBillText,
+  calculateGameTotalRevenue
+} from '../modules/billing'
 
 const { Title, Text } = Typography
+
+type StepKey = 'dm' | 'bill' | 'pay' | 'start' | 'end'
 
 const GameDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>()
@@ -72,6 +85,11 @@ const GameDetail: React.FC = () => {
   const [billModalOpen, setBillModalOpen] = useState(false)
   const [playerCouponMap, setPlayerCouponMap] = useState<Record<string, string[]>>({})
   const [billDetail, setBillDetail] = useState<Bill | null>(null)
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false)
+  const [currentPayBill, setCurrentPayBill] = useState<Bill | null>(null)
+  const [payAmount, setPayAmount] = useState<number>(0)
+  const [payType, setPayType] = useState<PaymentRecord['type']>('定金')
+  const [payNote, setPayNote] = useState('')
 
   const gameBills = useMemo(
     () => bills.filter(b => b.id && b.gameId === id),
@@ -84,6 +102,56 @@ const GameDetail: React.FC = () => {
     if (!game?.dmId) return null
     return dms.find(d => d.id === game.dmId) || null
   }, [game, dms])
+
+  const steps: { key: StepKey; title: string; status: 'finish' | 'process' | 'wait'; desc: string }[] = useMemo(() => {
+    if (!game) return []
+    const hasDM = !!game.dmId
+    const hasBills = gameBills.length > 0
+    const allPaid = game.playerIds.length > 0 &&
+      gameBills.length >= game.playerIds.length &&
+      gameBills.every(b => b.paymentStatus === '已支付')
+    const isPlaying = game.status === '进行中'
+    const isEnded = game.status === '已结束'
+
+    const result = [
+      {
+        key: 'dm' as StepKey,
+        title: '安排DM',
+        status: hasDM ? 'finish' : 'process',
+        desc: hasDM ? '已安排' : '待安排'
+      },
+      {
+        key: 'bill' as StepKey,
+        title: '生成账单',
+        status: hasBills ? 'finish' : hasDM ? 'process' : 'wait',
+        desc: hasBills ? `${gameBills.length} / ${game.playerIds.length}人` : '未生成'
+      },
+      {
+        key: 'pay' as StepKey,
+        title: '确认收款',
+        status: allPaid ? 'finish' : hasBills ? 'process' : 'wait',
+        desc: allPaid ? '已收齐' : `已收 ¥${revenue.totalPaid.toFixed(0)}`
+      },
+      {
+        key: 'start' as StepKey,
+        title: '开场',
+        status: isPlaying || isEnded ? 'finish' : allPaid ? 'process' : 'wait',
+        desc: isPlaying ? '进行中' : isEnded ? '已开场' : '待开场'
+      },
+      {
+        key: 'end' as StepKey,
+        title: '结束',
+        status: isEnded ? 'finish' : 'wait',
+        desc: isEnded ? '已结束' : '未结束'
+      }
+    ]
+    return result
+  }, [game, gameBills, revenue])
+
+  const nextStep = useMemo(() => {
+    const unfinished = steps.filter(s => s.status !== 'finish')
+    return unfinished.length > 0 ? unfinished[0] : null
+  }, [steps])
 
   if (!game || !script) {
     return (
@@ -132,7 +200,7 @@ const GameDetail: React.FC = () => {
 
   const handleGenerateBills = () => {
     const existingPaidPlayerIds = gameBills
-      .filter(b => b.paymentStatus === '已支付')
+      .filter(b => b.paymentStatus === '已支付' || b.paymentStatus === '部分支付')
       .map(b => b.playerId)
 
     const playersToBill = players.filter(
@@ -140,7 +208,7 @@ const GameDetail: React.FC = () => {
     )
 
     if (playersToBill.length === 0) {
-      message.warning('所有玩家均已生成账单或已支付')
+      message.warning('所有玩家均已生成账单或已支付，已收款账单无法重算')
       return
     }
 
@@ -148,14 +216,39 @@ const GameDetail: React.FC = () => {
     playersToBill.forEach(player => {
       const couponIds = playerCouponMap[player.id] || []
       const selectedCoupons = coupons.filter(c => couponIds.includes(c.id))
-      const bill = generateBill(game, player, script, selectedCoupons, discountOrder)
+      const bill = generateBill(game, player, script, selectedCoupons, discountOrder, false)
       newBills.push(bill)
     })
 
     removeBillsByGame(game.id)
     addBills(newBills)
-    message.success(`已为 ${newBills.length} 位玩家生成账单`)
+    message.success(`已为 ${newBills.length} 位玩家生成/重算账单`)
     setBillModalOpen(false)
+  }
+
+  const openPaymentModal = (bill: Bill) => {
+    setCurrentPayBill(bill)
+    setPayAmount(Math.max(0, bill.finalAmount - bill.paidAmount))
+    setPayType('定金')
+    setPayNote('')
+    setPaymentModalOpen(true)
+  }
+
+  const handleAddPayment = () => {
+    if (!currentPayBill) return
+    if (!payAmount || payAmount <= 0) {
+      message.warning('请输入收款金额')
+      return
+    }
+    const remain = currentPayBill.finalAmount - currentPayBill.paidAmount
+    if (payAmount > remain + 0.001) {
+      message.warning(`收款金额不能超过待收金额 ¥${remain.toFixed(2)}`)
+      return
+    }
+    const updated = addPayment(currentPayBill, payAmount, payType, payNote || undefined)
+    updateBill(updated)
+    message.success('收款成功')
+    setPaymentModalOpen(false)
   }
 
   const handleMarkPaid = (bill: Bill) => {
@@ -185,15 +278,37 @@ const GameDetail: React.FC = () => {
     }
   }
 
+  const handleStartGame = () => {
+    if (game.status !== '已成团') {
+      message.warning('只有已成团的局才能开场')
+      return
+    }
+    updateGameSession({ ...game, status: '进行中' })
+    message.success('已开场')
+  }
+
+  const handleEndGame = () => {
+    Modal.confirm({
+      title: '结束本局',
+      content: '确定要结束本局吗？结束后不可恢复。',
+      onOk: () => {
+        updateGameSession({ ...game, status: '已结束' })
+        message.success('本局已结束')
+      }
+    })
+  }
+
   const billColumns: ColumnsType<Bill> = [
     {
       title: '玩家',
       key: 'player',
+      width: 100,
       render: (_, r) => players.find(p => p.id === r.playerId)?.name || r.playerId
     },
     {
       title: '原价',
       dataIndex: 'originalAmount',
+      width: 80,
       render: (v) => `¥${v.toFixed(2)}`
     },
     {
@@ -219,15 +334,43 @@ const GameDetail: React.FC = () => {
       }
     },
     {
-      title: '实付',
+      title: '应收',
       dataIndex: 'finalAmount',
+      width: 90,
       render: (v) => <Text strong style={{ color: '#722ed1' }}>¥{v.toFixed(2)}</Text>
+    },
+    {
+      title: '已收/待收',
+      key: 'paid',
+      width: 150,
+      render: (_, r) => {
+        const remain = Math.max(0, r.finalAmount - r.paidAmount)
+        return (
+          <Space direction="vertical" size={0} style={{ width: '100%' }}>
+            <div>
+              <Text type="success" style={{ fontSize: 12 }}>已收: ¥{r.paidAmount.toFixed(2)}</Text>
+            </div>
+            <div>
+              <Text type="danger" style={{ fontSize: 12 }}>待收: ¥{remain.toFixed(2)}</Text>
+            </div>
+            <Progress
+              percent={Math.round((r.paidAmount / r.finalAmount) * 100)}
+              size="small"
+              showInfo={false}
+              style={{ marginTop: 2 }}
+            />
+          </Space>
+        )
+      }
     },
     {
       title: '状态',
       dataIndex: 'paymentStatus',
+      width: 90,
       render: (s) => {
-        const cm: Record<string, string> = { '待支付': 'orange', '已支付': 'green', '已退款': 'default' }
+        const cm: Record<string, string> = {
+          '待支付': 'orange', '部分支付': 'blue', '已支付': 'green', '已退款': 'default'
+        }
         return <Tag color={cm[s]}>{s}</Tag>
       }
     },
@@ -239,8 +382,11 @@ const GameDetail: React.FC = () => {
         <Space size={4}>
           <Button size="small" icon={<FileTextOutlined />} onClick={() => setBillDetail(r)}>详情</Button>
           <Button size="small" icon={<PrinterOutlined />} onClick={() => handlePrintBill(r)}>打印</Button>
+          {(r.paymentStatus === '待支付' || r.paymentStatus === '部分支付') && (
+            <Button size="small" icon={<PlusOutlined />} onClick={() => openPaymentModal(r)}>收款</Button>
+          )}
           {r.paymentStatus === '待支付' && (
-            <Button size="small" type="primary" icon={<CheckCircleOutlined />} onClick={() => handleMarkPaid(r)}>收款</Button>
+            <Button size="small" type="primary" icon={<CheckCircleOutlined />} onClick={() => handleMarkPaid(r)}>全款</Button>
           )}
           {r.paymentStatus === '已支付' && (
             <Popconfirm title="确认退款？" onConfirm={() => handleRefund(r)}>
@@ -257,6 +403,26 @@ const GameDetail: React.FC = () => {
     return recommendDMForGame(dms, dmSchedules, game, script)
   }, [game, script, dms, dmSchedules])
 
+  const handleStepAction = (key: StepKey) => {
+    switch (key) {
+      case 'dm':
+        setDmModalOpen(true)
+        break
+      case 'bill':
+        openBillModal()
+        break
+      case 'pay':
+        document.getElementById('收款管理')?.scrollIntoView({ behavior: 'smooth' })
+        break
+      case 'start':
+        handleStartGame()
+        break
+      case 'end':
+        handleEndGame()
+        break
+    }
+  }
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Card bordered={false}>
@@ -269,7 +435,8 @@ const GameDetail: React.FC = () => {
                 game.status === '招募中' ? 'blue'
                   : game.status === '已成团' ? 'green'
                   : game.status === '进行中' ? 'orange'
-                  : 'default'
+                  : game.status === '已结束' ? 'default'
+                  : 'red'
               }>
                 {game.status}
               </Tag>
@@ -277,13 +444,29 @@ const GameDetail: React.FC = () => {
           </Col>
           <Col>
             <Space>
+              {game.status === '已成团' && (
+                <Button
+                  type="primary"
+                  icon={<PlayCircleOutlined />}
+                  onClick={handleStartGame}
+                >
+                  开始游戏
+                </Button>
+              )}
+              {game.status === '进行中' && (
+                <Button
+                  danger
+                  icon={<StopOutlined />}
+                  onClick={handleEndGame}
+                >
+                  结束游戏
+                </Button>
+              )}
               {game.status === '招募中' && (
                 <Button
                   type="primary"
                   icon={<HeartOutlined />}
-                  onClick={() => {
-                    navigate('/matching')
-                  }}
+                  onClick={() => navigate('/matching')}
                 >
                   去撮合玩家
                 </Button>
@@ -291,6 +474,30 @@ const GameDetail: React.FC = () => {
             </Space>
           </Col>
         </Row>
+      </Card>
+
+      <Card title="执行流程" bordered={false}>
+        <Steps
+          current={steps.filter(s => s.status === 'finish').length}
+          items={steps.map(s => ({
+            title: s.title,
+            description: s.desc,
+            status: s.status
+          }))}
+          size="small"
+        />
+        {nextStep && nextStep.status === 'process' && (
+          <div style={{ marginTop: 16, textAlign: 'center' }}>
+            <Text type="secondary">下一步：</Text>
+            <Button
+              type="primary"
+              onClick={() => handleStepAction(nextStep.key)}
+              style={{ marginLeft: 8 }}
+            >
+              {nextStep.title}
+            </Button>
+          </div>
+        )}
       </Card>
 
       <Row gutter={[16, 16]}>
@@ -332,7 +539,9 @@ const GameDetail: React.FC = () => {
                   <Tag color="green">已安排</Tag>
                 </Space>
                 <div>
-                  <Button size="small" danger onClick={handleUnassignDM}>取消安排</Button>
+                  {game.status !== '进行中' && game.status !== '已结束' && (
+                    <Button size="small" danger onClick={handleUnassignDM}>取消安排</Button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -391,13 +600,17 @@ const GameDetail: React.FC = () => {
                             <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 8 }}>
                               <div>
                                 <Text type="secondary" style={{ fontSize: 12 }}>账单：</Text>
-                                <Tag color={playerBill.paymentStatus === '已支付' ? 'green' : 'orange'}>
+                                <Tag color={playerBill.paymentStatus === '已支付' ? 'green' : playerBill.paymentStatus === '部分支付' ? 'blue' : 'orange'}>
                                   {playerBill.paymentStatus}
                                 </Tag>
                               </div>
                               <div>
-                                <Text type="secondary" style={{ fontSize: 12 }}>实付：</Text>
-                                <strong style={{ color: '#722ed1' }}>¥{playerBill.finalAmount.toFixed(2)}</strong>
+                                <Text type="secondary" style={{ fontSize: 12 }}>应收：</Text>
+                                <span>¥{playerBill.finalAmount.toFixed(2)}</span>
+                              </div>
+                              <div>
+                                <Text type="secondary" style={{ fontSize: 12 }}>已收：</Text>
+                                <Text type="success" style={{ fontSize: 12 }}>¥{playerBill.paidAmount.toFixed(2)}</Text>
                               </div>
                             </div>
                           ) : (
@@ -415,6 +628,7 @@ const GameDetail: React.FC = () => {
           </Card>
 
           <Card
+            id="收款管理"
             title={
               <Space>
                 <MoneyCollectOutlined />
@@ -429,7 +643,7 @@ const GameDetail: React.FC = () => {
                 icon={<FileTextOutlined />}
                 onClick={openBillModal}
               >
-                {gameBills.length > 0 ? '重新生成账单' : '生成账单'}
+                {gameBills.length > 0 ? '重算未支付账单' : '生成账单'}
               </Button>
             }
           >
@@ -444,7 +658,24 @@ const GameDetail: React.FC = () => {
                 <Statistic title="优惠合计" value={revenue.totalDiscount} prefix="-¥" precision={2} valueStyle={{ color: '#52c41a' }} />
               </Col>
               <Col span={6}>
-                <Statistic title="实收金额" value={revenue.totalFinal} prefix="¥" precision={2} valueStyle={{ color: '#722ed1' }} />
+                <Statistic title="应收金额" value={revenue.totalFinal} prefix="¥" precision={2} valueStyle={{ color: '#722ed1' }} />
+              </Col>
+            </Row>
+            <Row gutter={16} style={{ marginBottom: 16 }}>
+              <Col span={8}>
+                <Text type="secondary">已收</Text>
+                <div style={{ fontWeight: 600, color: '#52c41a', fontSize: 18 }}>¥{revenue.totalPaid.toFixed(2)}</div>
+              </Col>
+              <Col span={8}>
+                <Text type="secondary">待收</Text>
+                <div style={{ fontWeight: 600, color: '#fa8c16', fontSize: 18 }}>¥{revenue.totalUnpaid.toFixed(2)}</div>
+              </Col>
+              <Col span={8}>
+                <Text type="secondary">收款进度</Text>
+                <Progress
+                  percent={Math.round((revenue.totalPaid / Math.max(revenue.totalFinal, 0.01)) * 100)}
+                  status="active"
+                />
               </Col>
             </Row>
             {gameBills.length === 0 ? (
@@ -456,6 +687,7 @@ const GameDetail: React.FC = () => {
                 rowKey="id"
                 pagination={false}
                 size="small"
+                scroll={{ x: 900 }}
               />
             )}
           </Card>
@@ -515,13 +747,15 @@ const GameDetail: React.FC = () => {
         <div style={{ marginBottom: 12 }}>
           <Text type="secondary">
             为每位玩家选择要使用的优惠券组合，不选则按原价计费。
-            已支付的账单不会被覆盖。
+            已支付和部分支付的账单不会被覆盖。
           </Text>
         </div>
         <List
           dataSource={game.playerIds.map(pid => players.find(p => p.id === pid)).filter(Boolean) as typeof players}
           renderItem={player => {
-            const existingBill = gameBills.find(b => b.playerId === player.id && b.paymentStatus === '已支付')
+            const existingBill = gameBills.find(b => b.playerId === player.id)
+            const isProtected = existingBill &&
+              (existingBill.paymentStatus === '已支付' || existingBill.paymentStatus === '部分支付')
             return (
               <List.Item>
                 <List.Item.Meta
@@ -530,11 +764,19 @@ const GameDetail: React.FC = () => {
                     <Space>
                       <strong>{player.name}</strong>
                       <Tag>¥{script.price}</Tag>
-                      {existingBill && <Tag color="green">已支付（跳过）</Tag>}
+                      {isProtected && (
+                        <Tag color="green">{existingBill!.paymentStatus}（跳过重算）</Tag>
+                      )}
                     </Space>
                   }
                   description={
-                    existingBill ? null : (
+                    isProtected ? (
+                      <div>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          已收 ¥{existingBill!.paidAmount.toFixed(2)} / 应收 ¥{existingBill!.finalAmount.toFixed(2)}
+                        </Text>
+                      </div>
+                    ) : (
                       <Select
                         mode="multiple"
                         placeholder="选择优惠券（可不选）"
@@ -560,6 +802,77 @@ const GameDetail: React.FC = () => {
       </Modal>
 
       <Modal
+        title="收款登记"
+        open={paymentModalOpen}
+        onCancel={() => setPaymentModalOpen(false)}
+        onOk={handleAddPayment}
+        okText="确认收款"
+        width={400}
+      >
+        {currentPayBill && (() => {
+          const player = players.find(p => p.id === currentPayBill.playerId)
+          const remain = currentPayBill.finalAmount - currentPayBill.paidAmount
+          return (
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <div>
+                <Text type="secondary">玩家：</Text>
+                <strong>{player?.name}</strong>
+              </div>
+              <div>
+                <Text type="secondary">应收：</Text>
+                <strong>¥{currentPayBill.finalAmount.toFixed(2)}</strong>
+              </div>
+              <div>
+                <Text type="secondary">已收：</Text>
+                <Text type="success">¥{currentPayBill.paidAmount.toFixed(2)}</Text>
+              </div>
+              <div>
+                <Text type="secondary">待收：</Text>
+                <Text type="danger" strong>¥{remain.toFixed(2)}</Text>
+              </div>
+              <Divider style={{ margin: '8px 0' }} />
+              <div>
+                <Text type="secondary">收款类型：</Text>
+                <Select
+                  value={payType}
+                  onChange={setPayType}
+                  style={{ width: 120, marginLeft: 8 }}
+                  options={[
+                    { label: '定金', value: '定金' },
+                    { label: '尾款', value: '尾款' },
+                    { label: '全款', value: '全款' },
+                    { label: '其他', value: '其他' }
+                  ]}
+                />
+              </div>
+              <div>
+                <Text type="secondary">收款金额：</Text>
+                <InputNumber
+                  value={payAmount}
+                  onChange={v => setPayAmount(v || 0)}
+                  min={0}
+                  max={remain}
+                  step={10}
+                  precision={2}
+                  style={{ width: 200, marginLeft: 8 }}
+                  addonBefore="¥"
+                />
+              </div>
+              <div>
+                <Text type="secondary">备注：</Text>
+                <AntInput
+                  value={payNote}
+                  onChange={e => setPayNote(e.target.value)}
+                  placeholder="选填"
+                  style={{ marginTop: 4 }}
+                />
+              </div>
+            </Space>
+          )
+        })()}
+      </Modal>
+
+      <Modal
         title="账单详情"
         open={!!billDetail}
         onCancel={() => setBillDetail(null)}
@@ -567,9 +880,14 @@ const GameDetail: React.FC = () => {
           billDetail ? (
             <Space>
               <Button icon={<PrinterOutlined />} onClick={() => handlePrintBill(billDetail)}>打印</Button>
+              {(billDetail.paymentStatus === '待支付' || billDetail.paymentStatus === '部分支付') && (
+                <Button icon={<PlusOutlined />} onClick={() => { openPaymentModal(billDetail); setBillDetail(null) }}>
+                  收款
+                </Button>
+              )}
               {billDetail.paymentStatus === '待支付' && (
                 <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => { handleMarkPaid(billDetail); setBillDetail(null) }}>
-                  确认收款
+                  确认全款
                 </Button>
               )}
               <Button onClick={() => setBillDetail(null)}>关闭</Button>
