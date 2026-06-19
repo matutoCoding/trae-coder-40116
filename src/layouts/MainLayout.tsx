@@ -31,6 +31,8 @@ const MainLayout: React.FC = () => {
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
 
+  const selectedKey = menuItems.find(m => location.pathname.startsWith(m.key))?.key || '/dashboard'
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider
@@ -53,7 +55,7 @@ const MainLayout: React.FC = () => {
         <Menu
           theme="dark"
           mode="inline"
-          selectedKeys={[location.pathname]}
+          selectedKeys={[selectedKey]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
         />
@@ -73,7 +75,7 @@ const MainLayout: React.FC = () => {
           }}
         >
           <div style={{ fontSize: 18, fontWeight: 600 }}>
-            {menuItems.find(m => m.key === location.pathname)?.label || '剧本杀组局助手'}
+            {menuItems.find(m => location.pathname.startsWith(m.key))?.label || '剧本杀组局助手'}
           </div>
           <div style={{ color: '#666', fontSize: 14 }}>
             欢迎使用剧本杀组局管理系统

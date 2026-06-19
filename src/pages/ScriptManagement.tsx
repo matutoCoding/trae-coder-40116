@@ -29,7 +29,7 @@ const allThemes: ScriptTheme[] = [
 const allDifficulties: ScriptDifficulty[] = ['新手', '进阶', '硬核', '骨灰']
 
 const ScriptManagement: React.FC = () => {
-  const { scripts } = useAppStore()
+  const { scripts, addScript } = useAppStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [form] = Form.useForm()
 
@@ -46,7 +46,8 @@ const ScriptManagement: React.FC = () => {
         price: values.price,
         description: values.description || ''
       }
-      message.success(`剧本 "${newScript.name}" 已添加（演示环境）`)
+      addScript(newScript)
+      message.success(`剧本 "${newScript.name}" 已添加`)
       setIsModalOpen(false)
       form.resetFields()
     })

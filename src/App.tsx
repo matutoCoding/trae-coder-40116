@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import MainLayout from './layouts/MainLayout'
 import Dashboard from './pages/Dashboard'
 import GameList from './pages/GameList'
+import GameDetail from './pages/GameDetail'
 import Matching from './pages/Matching'
 import DiscountConfig from './pages/DiscountConfig'
 import BillManagement from './pages/BillManagement'
@@ -17,6 +18,7 @@ const App: React.FC = () => {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="games" element={<GameList />} />
+        <Route path="games/:id" element={<GameDetail />} />
         <Route path="matching" element={<Matching />} />
         <Route path="discount" element={<DiscountConfig />} />
         <Route path="bills" element={<BillManagement />} />

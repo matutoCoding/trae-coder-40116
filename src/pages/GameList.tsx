@@ -14,7 +14,7 @@ import {
   message
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { PlusOutlined, DeleteOutlined, UserAddOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined, UserAddOutlined, EyeOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import dayjs, { Dayjs } from 'dayjs'
 import { useAppStore } from '../store/useAppStore'
@@ -129,20 +129,29 @@ const GameList: React.FC = () => {
     {
       title: '操作',
       key: 'action',
-      width: 200,
+      width: 260,
       render: (_, record) => (
         <Space>
           <Button
             size="small"
             type="primary"
-            icon={<UserAddOutlined />}
-            onClick={() => {
-              setSelectedGameId(record.id)
-              navigate('/matching')
-            }}
+            icon={<EyeOutlined />}
+            onClick={() => navigate(`/games/${record.id}`)}
           >
-            撮合玩家
+            详情
           </Button>
+          {record.status === '招募中' && (
+            <Button
+              size="small"
+              icon={<UserAddOutlined />}
+              onClick={() => {
+                setSelectedGameId(record.id)
+                navigate('/matching')
+              }}
+            >
+              撮合
+            </Button>
+          )}
           <Popconfirm
             title="确定删除此拼场局？"
             onConfirm={() => handleDeleteGame(record.id)}
